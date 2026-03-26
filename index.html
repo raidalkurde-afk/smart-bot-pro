@@ -1,1 +1,245 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>🔥 Deriv Auto Bot PRO</title>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+  margin:0;
+  background: radial-gradient(circle at top,#020617,#000);
+  color:white;
+  font-family:Arial;
+  text-align:center;
+}
+
+.container{padding:15px;}
+
+h2{
+  color:#22c55e;
+  text-shadow:0 0 10px #22c55e;
+}
+
+canvas{
+  background:#020617;
+  border-radius:15px;
+}
+
+button{
+  padding:12px;
+  margin:5px;
+  border:none;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+.analyze{
+  background:linear-gradient(135deg,#22c55e,#16a34a);
+}
+
+.auto{
+  background:linear-gradient(135deg,#3b82f6,#2563eb);
+}
+
+.card{
+  background:#111827;
+  margin:8px;
+  padding:12px;
+  border-radius:10px;
+}
+
+.bar{
+  width:80%;
+  height:10px;
+  background:#222;
+  margin:auto;
+  border-radius:10px;
+}
+
+.fill{
+  height:100%;
+  width:0%;
+  background:#22c55e;
+  border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>🚀 Deriv Auto Bot PRO</h2>
+
+<canvas id="chart"></canvas>
+
+<br>
+
+<button class="analyze" onclick="analyzeNow()">تحليل</button>
+<button class="auto" onclick="toggleAuto()">AUTO</button>
+
+<div class="card">Signal: <span id="signal">--</span></div>
+
+<div class="bar"><div id="strengthBar" class="fill"></div></div>
+
+<div class="card">Entry: <span id="entry">--</span></div>
+<div class="card">TP: <span id="tp">--</span></div>
+<div class="card">SL: <span id="sl">--</span></div>
+
+</div>
+
+<audio id="alertSound" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
+
+<script>
+
+let ws;
+let prices=[];
+let auto=false;
+let interval;
+
+const ctx=document.getElementById('chart').getContext('2d');
+
+const chart=new Chart(ctx,{
+  type:'line',
+  data:{labels:[],datasets:[{data:[],borderWidth:2}]},
+  options:{animation:false}
+});
+
+function updateChart(p){
+  chart.data.labels.push('');
+  chart.data.datasets[0].data.push(p);
+
+  if(chart.data.labels.length>50){
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update();
+}
+
+// ===== RSI =====
+function RSI(data){
+  let g=0,l=0;
+  for(let i=1;i<data.length;i++){
+    let d=data[i]-data[i-1];
+    if(d>0) g+=d; else l-=d;
+  }
+  let rs=g/(l||1);
+  return 100-(100/(1+rs));
+}
+
+// ===== EMA =====
+function EMA(data,p){
+  let k=2/(p+1), ema=data[0];
+  for(let i=1;i<data.length;i++){
+    ema = data[i]*k + ema*(1-k);
+  }
+  return ema;
+}
+
+// ===== ATR =====
+function ATR(data){
+  let sum=0;
+  for(let i=1;i<data.length;i++){
+    sum+=Math.abs(data[i]-data[i-1]);
+  }
+  return sum/data.length;
+}
+
+// ===== تحليل قوي =====
+function analyzeNow(){
+
+  prices=[];
+
+  ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({ticks:"R_100"}));
+  };
+
+  ws.onmessage=(msg)=>{
+    let d=JSON.parse(msg.data);
+
+    if(d.tick){
+      let price=d.tick.quote;
+
+      prices.push(price);
+      updateChart(price);
+
+      if(prices.length<50) return;
+
+      ws.close();
+
+      let rsi=RSI(prices);
+      let ema20=EMA(prices,20);
+      let ema50=EMA(prices,50);
+      let atr=ATR(prices);
+
+      let signal="WAIT";
+      let strength=0;
+
+      let trendUp = ema20 > ema50;
+      let trendDown = ema20 < ema50;
+
+      // 🔥 استراتيجية قوية
+      if(rsi < 30 && trendUp){
+        signal="BUY 🔥";
+        strength=85;
+      }
+      else if(rsi > 70 && trendDown){
+        signal="SELL 🔥";
+        strength=85;
+      }
+
+      // 💥 قوة إضافية (زخم)
+      let last = prices[prices.length-2];
+      let momentum = Math.abs(price-last);
+
+      if(momentum > atr){
+        strength += 10;
+      }
+
+      document.getElementById("signal").innerText=signal;
+      document.getElementById("strengthBar").style.width=strength+"%";
+
+      let entry=price;
+
+      let sl = signal.includes("BUY")
+        ? price - atr*2
+        : price + atr*2;
+
+      let tp = signal.includes("BUY")
+        ? price + atr*4
+        : price - atr*4;
+
+      document.getElementById("entry").innerText=entry.toFixed(2);
+      document.getElementById("tp").innerText=tp.toFixed(2);
+      document.getElementById("sl").innerText=sl.toFixed(2);
+
+      // 🔔 تنبيه ذكي
+      if(auto && strength>=90){
+        document.getElementById("alertSound").play();
+      }
+
+    }
+  };
+}
+
+// ===== AUTO =====
+function toggleAuto(){
+  auto=!auto;
+
+  if(auto){
+    interval=setInterval(analyzeNow,5000);
+    alert("AUTO ON 🔔");
+  }else{
+    clearInterval(interval);
+    alert("AUTO OFF");
+  }
+}
+
+</script>
+
+</body>
+</html>
