@@ -1,1 +1,232 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>Smart Bot PRO</title>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+  background: linear-gradient(135deg,#020617,#0f172a);
+  color:white;
+  font-family:Arial;
+  text-align:center;
+}
+
+h2{
+  color:#22c55e;
+}
+
+.container{
+  width:90%;
+  margin:auto;
+}
+
+canvas{
+  background:#020617;
+  border-radius:10px;
+  margin-bottom:15px;
+}
+
+select,button{
+  padding:12px;
+  margin:5px;
+  border:none;
+  border-radius:10px;
+  font-size:16px;
+}
+
+.start{background:#22c55e;color:white;}
+.auto{background:#3b82f6;color:white;}
+
+.box{
+  background:#0f172a;
+  padding:12px;
+  margin:6px;
+  border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>🚀 Smart Bot PRO</h2>
+
+<div class="container">
+
+<canvas id="chart" height="200"></canvas>
+
+<select id="symbol">
+<option value="R_100">R_100</option>
+<option value="R_50">R_50</option>
+<option value="R_25">R_25</option>
+</select>
+
+<br>
+
+<button class="start" onclick="start()">تشغيل</button>
+<button class="auto" onclick="toggleAuto()">AUTO</button>
+
+<div class="box" id="price">Price: --</div>
+<div class="box" id="signal">Signal: --</div>
+<div class="box" id="strength">Strength: --</div>
+<div class="box" id="entry">Entry: --</div>
+<div class="box" id="tp">TP: --</div>
+<div class="box" id="sl">SL: --</div>
+
+</div>
+
+<script>
+let ws;
+let prices=[];
+let auto=false;
+
+// ====== CHART ======
+let chart;
+function initChart(){
+  const ctx=document.getElementById("chart").getContext("2d");
+  chart=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:[],
+      datasets:[{
+        data:[],
+        borderWidth:2
+      }]
+    },
+    options:{
+      animation:false,
+      scales:{x:{display:false}}
+    }
+  });
+}
+initChart();
+
+function updateChart(price){
+  chart.data.labels.push('');
+  chart.data.datasets[0].data.push(price);
+
+  if(chart.data.labels.length>50){
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+
+  chart.update();
+}
+
+// ====== INDICATORS ======
+function RSI(data,period=14){
+  let gains=0,losses=0;
+  for(let i=1;i<data.length;i++){
+    let diff=data[i]-data[i-1];
+    if(diff>0) gains+=diff;
+    else losses-=diff;
+  }
+  let rs=gains/(losses||1);
+  return 100-(100/(1+rs));
+}
+
+function EMA(data,period){
+  let k=2/(period+1);
+  let ema=data[0];
+  for(let i=1;i<data.length;i++){
+    ema=data[i]k+ema(1-k);
+  }
+  return ema;
+}
+
+// ====== START ======
+function start(){
+  ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+
+  ws.onopen=()=>{
+    let symbol=document.getElementById("symbol").value;
+    ws.send(JSON.stringify({ticks:symbol}));
+  };
+
+  ws.onmessage=(msg)=>{
+    let data=JSON.parse(msg.data);
+
+    if(data.tick){
+      let price=data.tick.quote;
+
+      document.getElementById("price").innerText="Price: "+price;
+
+      prices.push(price);
+      if(prices.length>100) prices.shift();
+
+      updateChart(price);
+      analyze(price);
+    }
+  };
+}
+
+// ====== ANALYSIS ======
+function analyze(price){
+
+  if(prices.length<30) return;
+
+  let rsi=RSI(prices);
+  let ema20=EMA(prices,20);
+  let ema50=EMA(prices,50);
+
+  let support=Math.min(...prices);
+  let resistance=Math.max(...prices);
+
+  let signal="WAIT";
+  let strength=0;
+
+  // BUY
+  if(rsi<30 && price>ema20 && ema20>ema50){
+    signal="BUY";
+    strength+=2;
+  }
+
+  // SELL
+  if(rsi>70 && price<ema20 && ema20<ema50){
+    signal="SELL";
+    strength+=2;
+  }
+
+  // SUPPORT / RESISTANCE
+  if(price<=support+1){ strength+=1; }
+  if(price>=resistance-1){ strength+=1; }
+
+  // SPIKE DETECTION
+  let last=prices[prices.length-2];
+  if(Math.abs(price-last)>2){
+    signal="SPIKE ⚡";
+    strength=5;
+  }
+
+  document.getElementById("signal").innerText="Signal: "+signal;
+  document.getElementById("strength").innerText="Strength: "+strength+"/5";
+
+  // ===== TRADE =====
+  if(signal==="BUY" || signal==="SELL"){
+
+    let entry=price;
+
+    let tp = signal==="BUY" ? price+3 : price-3;
+    let sl = signal==="BUY" ? price-1.5 : price+1.5;
+
+    document.getElementById("entry").innerText="Entry: "+entry;
+    document.getElementById("tp").innerText="TP: "+tp;
+    document.getElementById("sl").innerText="SL: "+sl;
+
+    if(auto && strength>=3){
+      console.log("AUTO TRADE:",signal);
+    }
+  }
+}
+
+// ===== AUTO =====
+function toggleAuto(){
+  auto=!auto;
+  alert("AUTO: "+(auto?"ON":"OFF"));
+}
+</script>
+
+</body>
+</html>
