@@ -2,7 +2,7 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<title>🚀 PRO MAX AI BOT - نسخة محسنة</title>
+<title>🚀 PRO MAX AI BOT - نسخة الروبوت</title>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/technicalindicators@3.0.6/dist/browser.js"></script>
@@ -14,10 +14,11 @@ body {
   color:white;
   font-family:Arial;
   padding-bottom:100px;
+  text-align:center;
 }
 
+/* --- رأس التطبيق مع روبوت --- */
 .header{
-  text-align:center;
   padding:15px;
   font-size:22px;
   font-weight:bold;
@@ -25,6 +26,19 @@ body {
   text-shadow:0 0 6px #00ff9d;
 }
 
+.robot-img {
+  width:120px;
+  margin:10px auto;
+  display:block;
+  animation: float 2s infinite alternate;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(-10px); }
+}
+
+/* --- الشارت --- */
 #chart {
   height:360px;
   margin:10px 15px;
@@ -32,6 +46,7 @@ body {
   box-shadow:0 4px 12px rgba(0,0,0,0.5);
 }
 
+/* --- بطاقات الإشارات --- */
 .panel {
   display:grid;
   grid-template-columns: repeat(3,1fr);
@@ -57,6 +72,7 @@ body {
   50%{background: rgba(255,50,50,0.8);}
 }
 
+/* --- البار السفلي والأزرار --- */
 .bottom-bar {
   position:fixed;
   bottom:0;
@@ -99,7 +115,8 @@ select, button{
 </head>
 <body>
 
-<div class="header">🚀 PRO MAX AI BOT - نسخة محسنة</div>
+<div class="header">🚀 PRO MAX AI BOT</div>
+<img src="https://i.imgur.com/8Qy7BfR.png" alt="robot" class="robot-img">
 
 <div id="chart"></div>
 
@@ -172,7 +189,6 @@ function connect(){
   ws.onmessage = (e)=>{
     const data = JSON.parse(e.data);
 
-    // HISTORICAL DATA
     if(data.history){
       candles = data.history.times.map((t,i)=>({
         time: Math.floor(data.history.times[i]),
@@ -185,7 +201,6 @@ function connect(){
       series.setData(candles);
     }
 
-    // LIVE UPDATES
     if(data.ohlc){
       const c = data.ohlc;
       const candle = {
