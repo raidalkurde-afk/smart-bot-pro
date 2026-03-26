@@ -2,9 +2,10 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<title>🔥 PRO MAX AI BOT</title>
+<title>🔥 PRO MAX AI BOT - جديد</title>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/technicalindicators@3.0.6/dist/browser.js"></script>
 
 <style>
 body{
@@ -59,7 +60,7 @@ select,button{
 
 <body>
 
-<div class="header">🚀 PRO MAX AI BOT</div>
+<div class="header">🚀 PRO MAX AI BOT - نسخة جديدة</div>
 
 <div id="chart"></div>
 
@@ -97,7 +98,6 @@ let ws;
 let candles=[];
 let prices=[];
 let auto=true;
-let lastAnalysis=0;
 
 // ===== CHART =====
 const chart = LightweightCharts.createChart(document.getElementById('chart'),{
@@ -105,178 +105,109 @@ const chart = LightweightCharts.createChart(document.getElementById('chart'),{
 });
 const series = chart.addCandlestickSeries();
 
-// ===== CONNECT =====
+// ===== CONNECT WEBSOCKET =====
 function connect(){
-
   if(ws) ws.close();
-
   ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
 
-  ws.onopen = () => {
-
-    ws.send(JSON.stringify({
-      ticks_history: symbol,
-      style:"candles",
-      granularity:60,
-      count:100,
-      end:"latest"
-    }));
-
-    ws.send(JSON.stringify({
-      ohlc:symbol,
-      granularity:60,
-      subscribe:1
-    }));
+  ws.onopen = ()=>{
+    ws.send(JSON.stringify({ticks_history:symbol, style:"candles", granularity:60, count:100, end:"latest"}));
+    ws.send(JSON.stringify({ohlc:symbol, granularity:60, subscribe:1}));
   };
 
-  ws.onmessage = (e) => {
-    const d = JSON.parse(e.data);
+  ws.onmessage = (e)=>{
+    const data = JSON.parse(e.data);
 
-    if(d.history){
-      candles = d.history.times.map((t,i)=>({
+    if(data.history){
+      candles = data.history.times.map((t,i)=>({
         time:t,
-        open:d.history.open[i],
-        high:d.history.high[i],
-        low:d.history.low[i],
-        close:d.history.close[i]
+        open:data.history.open[i],
+        high:data.history.high[i],
+        low:data.history.low[i],
+        close:data.history.close[i]
       }));
-
       prices = candles.map(c=>c.close);
       series.setData(candles);
     }
 
-    if(d.ohlc){
-      const c = d.ohlc;
-
-      const candle = {
-        time:c.epoch,
-        open:c.open,
-        high:c.high,
-        low:c.low,
-        close:c.close
-      };
-
+    if(data.ohlc){
+      const c = data.ohlc;
+      const candle = {time:c.epoch, open:c.open, high:c.high, low:c.low, close:c.close};
       const last = candles.at(-1);
-
-      if(last && last.time === candle.time){
-        candles[candles.length-1] = candle;
-      }else{
-        candles.push(candle);
-      }
-
+      if(last && last.time === candle.time) candles[candles.length-1]=candle;
+      else candles.push(candle);
       series.update(candle);
-
       prices.push(candle.close);
       if(prices.length>200) prices.shift();
-
-      if(auto && Date.now()-lastAnalysis>1000){
-        analyze();
-        lastAnalysis = Date.now();
-      }
     }
   };
 
-  ws.onclose = () => setTimeout(connect,2000);
+  ws.onclose = ()=>setTimeout(connect,2000);
 }
 
-// ===== RSI (WILDER) =====
-function RSI(period=14){
-  if(prices.length < period+1) return null;
-
-  let gains=0, losses=0;
-
-  for(let i=1;i<=period;i++){
-    let diff = prices.at(-i) - prices.at(-i-1);
-    if(diff>0) gains+=diff;
-    else losses-=diff;
-  }
-
-  let rs = gains/(losses||1);
-  return 100 - (100/(1+rs));
+// ===== INDICATORS =====
+function getRSI(){
+  if(prices.length<14) return null;
+  const rsiValues = technicalindicators.RSI.calculate({values:prices, period:14});
+  return rsiValues.at(-1);
 }
 
-// ===== EMA =====
-function EMA(period){
-  if(prices.length < period) return null;
-
-  let k = 2/(period+1);
-  let ema = prices[prices.length-period];
-
-  for(let i=prices.length-period+1;i<prices.length;i++){
-    ema = prices[i]*k + ema*(1-k);
-  }
-
-  return ema;
+function getEMA(period){
+  if(prices.length<period) return null;
+  const emaValues = technicalindicators.EMA.calculate({values:prices, period});
+  return emaValues.at(-1);
 }
 
-// ===== SPIKE =====
-function detectSpike(){
-  if(prices.length < 30) return false;
-
-  let moves=[];
-  for(let i=1;i<30;i++){
-    moves.push(Math.abs(prices.at(-i)-prices.at(-i-1)));
-  }
-
-  let avg = moves.reduce((a,b)=>a+b,0)/moves.length;
+function isSpike(){
+  if(prices.length<10) return false;
   let lastMove = Math.abs(prices.at(-1)-prices.at(-2));
-
-  return lastMove > avg*2;
+  let avgMove = prices.slice(-10).reduce((sum,p,i,arr)=>{
+    if(i===0) return 0;
+    return sum + Math.abs(p-arr[i-1]);
+  },0)/9;
+  return lastMove>avgMove*1.8;
 }
 
-// ===== ANALYZE =====
-function analyze(){
-
-  if(prices.length < 50) return;
-
-  const rsi = RSI();
-  const ema20 = EMA(20);
-  const ema50 = EMA(50);
-  const last = prices.at(-1);
-
-  document.getElementById("rsi").innerText = rsi ? rsi.toFixed(1) : "--";
-
-  let trend="SIDE";
+function getSignal(rsi, ema20, ema50){
+  let trend = "SIDE";
   if(ema20>ema50) trend="UP";
   else if(ema20<ema50) trend="DOWN";
 
-  document.getElementById("trend").innerText = trend;
-
-  let signal="WAIT";
-  let spike = detectSpike();
-
-  if(!spike){
-    if(rsi<40 && trend==="UP") signal="BUY 🚀";
-    else if(rsi>60 && trend==="DOWN") signal="SELL 🔻";
-  }
-
-  document.getElementById("signal").innerText =
-    spike ? "⚡ SPIKE قريب" : signal;
-
-  if(signal==="WAIT") return;
-
-  let entry=last;
-  let tp=entry+2;
-  let sl=entry-1.5;
-
-  if(signal.includes("SELL")){
-    tp=entry-2;
-    sl=entry+1.5;
-  }
-
-  document.getElementById("entry").innerText=entry.toFixed(2);
-  document.getElementById("tp").innerText=tp.toFixed(2);
-  document.getElementById("sl").innerText=sl.toFixed(2);
+  if(isSpike()) return {signal:"⚡ SPIKE قريب", trend};
+  if(rsi<40 && trend==="UP") return {signal:"BUY 🚀", trend};
+  if(rsi>60 && trend==="DOWN") return {signal:"SELL 🔻", trend};
+  return {signal:"WAIT", trend};
 }
 
-// ===== AUTO =====
+// ===== ANALYZE & UPDATE UI =====
+function analyze(){
+  if(prices.length<20) return;
+  const rsi = getRSI();
+  const ema20 = getEMA(20);
+  const ema50 = getEMA(50);
+  const lastPrice = prices.at(-1);
+
+  const signalData = getSignal(rsi, ema20, ema50);
+
+  document.getElementById("rsi").innerText = rsi?rsi.toFixed(1):"--";
+  document.getElementById("trend").innerText = signalData.trend;
+  document.getElementById("signal").innerText = signalData.signal;
+
+  if(signalData.signal!=="WAIT"){
+    document.getElementById("entry").innerText = lastPrice.toFixed(2);
+    document.getElementById("tp").innerText = (signalData.signal.includes("BUY")? lastPrice+2 : lastPrice-2).toFixed(2);
+    document.getElementById("sl").innerText = (signalData.signal.includes("BUY")? lastPrice-1.5 : lastPrice+1.5).toFixed(2);
+  }
+}
+
+// ===== AUTO ANALYSIS =====
+setInterval(()=>{ if(auto) analyze(); },1000);
 function toggleAuto(){
   auto=!auto;
-  document.getElementById("autoBtn").innerText =
-    auto ? "AUTO ON" : "AUTO OFF";
+  document.getElementById("autoBtn").innerText = auto?"AUTO ON":"AUTO OFF";
 }
 
-// ===== CHANGE =====
+// ===== CHANGE SYMBOL =====
 document.getElementById("symbol").onchange=(e)=>{
   symbol=e.target.value;
   candles=[];
