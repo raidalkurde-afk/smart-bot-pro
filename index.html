@@ -1,1 +1,276 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>🚀 PRO MAX AI BOT - تصميم عصري</title>
 
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/technicalindicators@3.0.6/dist/browser.js"></script>
+
+<style>
+/* --- خلفية وتصميم عام --- */
+body {
+  margin:0;
+  background: linear-gradient(135deg,#0d1117,#0a0f1c);
+  color:white;
+  font-family:Arial;
+  padding-bottom:100px;
+}
+
+/* --- رأس التطبيق --- */
+.header{
+  text-align:center;
+  padding:15px;
+  font-size:22px;
+  font-weight:bold;
+  color:#00ff9d;
+  text-shadow:0 0 6px #00ff9d;
+}
+
+/* --- الشارت --- */
+#chart {
+  height:360px;
+  margin:10px 15px;
+  border-radius:12px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* --- البطاقات --- */
+.panel {
+  display:grid;
+  grid-template-columns: repeat(3,1fr);
+  gap:10px;
+  padding:10px 15px;
+}
+
+.card {
+  background: rgba(15,23,42,0.85);
+  padding:14px;
+  border-radius:12px;
+  text-align:center;
+  font-weight:bold;
+  box-shadow:0 4px 12px rgba(0,0,0,0.3);
+  transition:0.2s;
+}
+.card.spike {
+  animation: blink 0.6s infinite;
+}
+@keyframes blink {
+  0%,100%{background:rgba(255, 200, 0,0.8);}
+  50%{background: rgba(255,50,50,0.8);}
+}
+
+/* --- البار السفلي والأزرار --- */
+.bottom-bar {
+  position:fixed;
+  bottom:0;
+  width:100%;
+  display:flex;
+  gap:10px;
+  padding:12px;
+  background: rgba(15,23,42,0.9);
+  box-shadow:0 -2px 12px rgba(0,0,0,0.5);
+}
+
+select, button{
+  flex:1;
+  padding:14px;
+  border:none;
+  border-radius:12px;
+  font-weight:bold;
+  cursor:pointer;
+  color:white;
+  transition: all 0.2s ease;
+  box-shadow:0 4px 8px rgba(0,0,0,0.3);
+}
+
+.analyze{
+  background: linear-gradient(90deg,#00ff9d,#00c853);
+}
+.analyze:hover{
+  transform: translateY(-2px);
+  box-shadow:0 6px 12px rgba(0,0,0,0.4);
+}
+
+.auto{
+  background: linear-gradient(90deg,#2979ff,#448aff);
+}
+.auto:hover{
+  transform: translateY(-2px);
+  box-shadow:0 6px 12px rgba(0,0,0,0.4);
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">🚀 PRO MAX AI BOT - نسخة عصريه</div>
+
+<div id="chart"></div>
+
+<div class="panel">
+  <div class="card">Signal <span id="signal">--</span></div>
+  <div class="card">RSI <span id="rsi">--</span></div>
+  <div class="card">Trend <span id="trend">--</span></div>
+  <div class="card">Entry <span id="entry">--</span></div>
+  <div class="card">TP <span id="tp">--</span></div>
+  <div class="card">SL <span id="sl">--</span></div>
+</div>
+
+<div class="bottom-bar">
+  <select id="symbol">
+    <option value="R_10">R_10</option>
+    <option value="R_25">R_25</option>
+    <option value="R_50">R_50</option>
+    <option value="R_75">R_75</option>
+    <option value="R_100">R_100</option>
+    <option value="BOOM500">Boom 500</option>
+    <option value="BOOM1000">Boom 1000</option>
+    <option value="CRASH500">Crash 500</option>
+    <option value="CRASH1000">Crash 1000</option>
+  </select>
+  <button class="analyze" onclick="analyze()">تحليل</button>
+  <button class="auto" onclick="toggleAuto()" id="autoBtn">AUTO ON</button>
+</div>
+
+<script>
+// ===== STATE =====
+let symbol="R_100";
+let ws;
+let candles=[];
+let prices=[];
+let auto=true;
+
+// ===== CHART =====
+const chart = LightweightCharts.createChart(document.getElementById('chart'),{
+  layout:{background:{color:"#0a0f1c"},textColor:"#aaa"},
+  grid:{vertLines:{color:'#222'},horzLines:{color:'#222'}},
+  priceScale:{borderColor:'#555'},
+  timeScale:{borderColor:'#555',rightOffset:5}
+});
+const series = chart.addCandlestickSeries();
+
+// ===== WEBSOCKET =====
+function connect(){
+  if(ws) ws.close();
+  ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+
+  ws.onopen = ()=>{
+    ws.send(JSON.stringify({ticks_history:symbol, style:"candles", granularity:60, count:100, end:"latest"}));
+    ws.send(JSON.stringify({ohlc:symbol, granularity:60, subscribe:1}));
+  };
+
+  ws.onmessage = (e)=>{
+    const data = JSON.parse(e.data);
+
+    if(data.history){
+      candles = data.history.times.map((t,i)=>({
+        time:t,
+        open:data.history.open[i],
+        high:data.history.high[i],
+        low:data.history.low[i],
+        close:data.history.close[i]
+      }));
+      prices = candles.map(c=>c.close);
+      series.setData(candles);
+    }
+
+    if(data.ohlc){
+      const c = data.ohlc;
+      const candle = {time:c.epoch, open:c.open, high:c.high, low:c.low, close:c.close};
+      const last = candles.at(-1);
+      if(last && last.time===candle.time) candles[candles.length-1]=candle;
+      else candles.push(candle);
+      series.update(candle);
+      prices.push(candle.close);
+      if(prices.length>200) prices.shift();
+    }
+  };
+
+  ws.onclose = ()=>setTimeout(connect,2000);
+}
+
+// ===== INDICATORS =====
+function getRSI(){
+  if(prices.length<14) return null;
+  const rsiValues = technicalindicators.RSI.calculate({values:prices, period:14});
+  return rsiValues.at(-1);
+}
+
+function getEMA(period){
+  if(prices.length<period) return null;
+  const emaValues = technicalindicators.EMA.calculate({values:prices, period});
+  return emaValues.at(-1);
+}
+
+function isSpike(){
+  if(prices.length<10) return false;
+  let lastMove = Math.abs(prices.at(-1)-prices.at(-2));
+  let avgMove = prices.slice(-10).reduce((sum,p,i,arr)=>{
+    if(i===0) return 0;
+    return sum + Math.abs(p-arr[i-1]);
+  },0)/9;
+  return lastMove>avgMove*1.8;
+}
+
+function getSignal(rsi, ema20, ema50){
+  let trend = "SIDE";
+  if(ema20>ema50) trend="UP";
+  else if(ema20<ema50) trend="DOWN";
+
+  if(isSpike()) return {signal:"⚡ SPIKE قريب", trend};
+  if(rsi<40 && trend==="UP") return {signal:"BUY 🚀", trend};
+  if(rsi>60 && trend==="DOWN") return {signal:"SELL 🔻", trend};
+  return {signal:"WAIT", trend};
+}
+
+// ===== ANALYZE =====
+function analyze(){
+  if(prices.length<20) return;
+  const rsi = getRSI();
+  const ema20 = getEMA(20);
+  const ema50 = getEMA(50);
+  const lastPrice = prices.at(-1);
+
+  const signalData = getSignal(rsi, ema20, ema50);
+
+  const signalCard = document.getElementById("signal");
+  signalCard.innerText = signalData.signal;
+  document.getElementById("rsi").innerText = rsi?rsi.toFixed(1):"--";
+  document.getElementById("trend").innerText = signalData.trend;
+
+  if(signalData.signal==="⚡ SPIKE قريب"){
+    signalCard.parentElement.classList.add("spike");
+  } else {
+    signalCard.parentElement.classList.remove("spike");
+  }
+
+  if(signalData.signal!=="WAIT"){
+    document.getElementById("entry").innerText = lastPrice.toFixed(2);
+    document.getElementById("tp").innerText = (signalData.signal.includes("BUY")? lastPrice+2 : lastPrice-2).toFixed(2);
+    document.getElementById("sl").innerText = (signalData.signal.includes("BUY")? lastPrice-1.5 : lastPrice+1.5).toFixed(2);
+  }
+}
+
+// ===== AUTO ANALYSIS =====
+setInterval(()=>{ if(auto) analyze(); },1000);
+function toggleAuto(){
+  auto=!auto;
+  document.getElementById("autoBtn").innerText = auto?"AUTO ON":"AUTO OFF";
+}
+
+// ===== CHANGE SYMBOL =====
+document.getElementById("symbol").onchange=(e)=>{
+  symbol=e.target.value;
+  candles=[];
+  prices=[];
+  series.setData([]);
+  connect();
+};
+
+// START
+connect();
+</script>
+
+</body>
+</html>
