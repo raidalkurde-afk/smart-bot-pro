@@ -1,1 +1,273 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>🔥 PRO BOT AI</title>
 
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+
+<style>
+body{
+  margin:0;
+  background:#020617;
+  color:white;
+  font-family:Arial;
+}
+
+/* 🔥 HEADER */
+.header{
+  padding:15px;
+  text-align:center;
+  font-size:22px;
+  color:#00ff9d;
+}
+
+/* 🔥 CONTROLS */
+.controls{
+  display:flex;
+  gap:10px;
+  padding:10px;
+}
+
+select,button{
+  flex:1;
+  padding:12px;
+  border:none;
+  border-radius:10px;
+  font-size:14px;
+}
+
+button{
+  cursor:pointer;
+}
+
+.analyze{background:#00c853;}
+.auto{background:#2979ff;}
+
+/* 🔥 CHART */
+#chart{
+  height:300px;
+}
+
+/* 🔥 CARDS */
+.panel{
+  padding:10px;
+}
+
+.card{
+  background:#0f172a;
+  padding:12px;
+  margin:8px 0;
+  border-radius:10px;
+  display:flex;
+  justify-content:space-between;
+  font-size:15px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">🚀 PRO BOT AI</div>
+
+<div class="controls">
+<select id="symbol">
+  <option value="R_100">R_100</option>
+  <option value="R_75">R_75</option>
+  <option value="R_50">R_50</option>
+  <option value="BOOM1000">Boom 1000</option>
+  <option value="CRASH1000">Crash 1000</option>
+</select>
+
+<button class="analyze" onclick="analyze()">تحليل</button>
+<button class="auto" onclick="toggleAuto()" id="autoBtn">AUTO OFF</button>
+</div>
+
+<div id="chart"></div>
+
+<div class="panel">
+<div class="card">Signal <span id="signal">--</span></div>
+<div class="card">RSI <span id="rsi">--</span></div>
+<div class="card">Entry <span id="entry">--</span></div>
+<div class="card">TP <span id="tp">--</span></div>
+<div class="card">SL <span id="sl">--</span></div>
+</div>
+
+<script>
+
+// ===== SETTINGS =====
+let symbol="R_100";
+let ws;
+let prices=[];
+let candles=[];
+let currentCandle=null;
+let auto=false;
+
+// ===== CHART =====
+const chart = LightweightCharts.createChart(document.getElementById('chart'),{
+  layout:{background:{color:"#020617"},textColor:"#aaa"}
+});
+
+const series = chart.addCandlestickSeries();
+
+// ===== CONNECT =====
+function connect(){
+
+  if(ws) ws.close();
+
+  ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({ticks:symbol}));
+  };
+
+  ws.onmessage=(e)=>{
+    let d=JSON.parse(e.data);
+    if(!d.tick) return;
+
+    let price=d.tick.quote;
+    prices.push(price);
+
+    if(prices.length>500) prices.shift();
+
+    let t=Math.floor(Date.now()/60000);
+
+    if(!currentCandle || currentCandle.time!==t){
+      currentCandle={time:t,open:price,high:price,low:price,close:price};
+      candles.push(currentCandle);
+    }else{
+      currentCandle.high=Math.max(currentCandle.high,price);
+      currentCandle.low=Math.min(currentCandle.low,price);
+      currentCandle.close=price;
+    }
+
+    if(candles.length>200) candles.shift();
+
+    series.setData(candles);
+
+    if(auto) analyze();
+  };
+
+  ws.onclose=()=>setTimeout(connect,2000);
+}
+
+// ===== RSI الحقيقي =====
+function calculateRSI(period=14){
+  if(prices.length < period+1) return null;
+
+  let gains=0, losses=0;
+
+  for(let i=prices.length-period; i<prices.length; i++){
+    let diff = prices[i] - prices[i-1];
+    if(diff>0) gains+=diff;
+    else losses-=diff;
+  }
+
+  let rs = gains / (losses || 1);
+  return 100 - (100/(1+rs));
+}
+
+// ===== تحليل شموع =====
+function detectEngulfing(){
+  if(candles.length<3) return false;
+
+  let c1 = candles.at(-2);
+  let c2 = candles.at(-1);
+
+  // bullish engulfing
+  if(c2.close>c2.open && c1.close<c1.open && c2.close>c1.open){
+    return "BUY";
+  }
+
+  // bearish engulfing
+  if(c2.close<c2.open && c1.close>c1.open && c2.close<c1.open){
+    return "SELL";
+  }
+
+  return null;
+}
+
+// ===== كشف Spike =====
+function detectSpike(){
+  if(prices.length<10) return false;
+
+  let last = prices.at(-1);
+  let avg = prices.slice(-10).reduce((a,b)=>a+b,0)/10;
+
+  let diff = Math.abs(last - avg);
+
+  if(diff > 3) return true;
+
+  return false;
+}
+
+// ===== ANALYZE =====
+function analyze(){
+
+  if(prices.length<50) return;
+
+  let rsi = calculateRSI();
+  document.getElementById("rsi").innerText = rsi ? rsi.toFixed(1) : "--";
+
+  let pattern = detectEngulfing();
+  let spike = detectSpike();
+
+  let last = prices.at(-1);
+
+  let signal="WAIT";
+
+  // 🔥 دخول ذكي
+  if(rsi < 30 && pattern==="BUY" && !spike){
+    signal="BUY 🚀";
+  }
+  else if(rsi > 70 && pattern==="SELL" && !spike){
+    signal="SELL 🔻";
+  }
+
+  // 🔥 قبل Spike
+  if(spike){
+    signal="⚡ SPIKE قريب";
+  }
+
+  document.getElementById("signal").innerText = signal;
+
+  if(signal==="WAIT") return;
+
+  let entry=last;
+  let sl = entry - 2;
+  let tp = entry + 4;
+
+  if(signal.includes("SELL")){
+    sl = entry + 2;
+    tp = entry - 4;
+  }
+
+  document.getElementById("entry").innerText = entry.toFixed(2);
+  document.getElementById("tp").innerText = tp.toFixed(2);
+  document.getElementById("sl").innerText = sl.toFixed(2);
+}
+
+// ===== AUTO =====
+function toggleAuto(){
+  auto=!auto;
+  document.getElementById("autoBtn").innerText =
+    auto ? "AUTO ON" : "AUTO OFF";
+}
+
+// ===== CHANGE SYMBOL =====
+document.getElementById("symbol").onchange=()=>{
+  symbol=document.getElementById("symbol").value;
+  prices=[];
+  candles=[];
+  currentCandle=null;
+  series.setData([]);
+  connect();
+};
+
+// START
+connect();
+
+</script>
+
+</body>
+</html>
