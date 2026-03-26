@@ -2,60 +2,56 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<title>🔥 AI Trading Bot PRO</title>
+<title>🔥 Pro Trading Bot</title>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
 body{
   margin:0;
-  background:linear-gradient(135deg,#020617,#000);
+  background:#0b0f1a;
   color:white;
   font-family:Arial;
 }
 
 .container{
-  padding:15px;
-  text-align:center;
+  padding:10px;
 }
 
 h2{
+  text-align:center;
   color:#22c55e;
-  text-shadow:0 0 20px #22c55e;
+}
+
+.top-bar{
+  display:flex;
+  gap:5px;
+  margin-bottom:10px;
+}
+
+select,button{
+  flex:1;
+  padding:10px;
+  border:none;
+  border-radius:8px;
+}
+
+button{cursor:pointer;}
+
+.buy{background:#22c55e;}
+.auto{background:#3b82f6;}
+
+#chart{
+  height:300px;
 }
 
 .card{
-  background:rgba(255,255,255,0.05);
-  backdrop-filter:blur(12px);
-  border-radius:15px;
-  padding:12px;
-  margin:8px;
-  border:1px solid rgba(255,255,255,0.1);
-}
-
-#chart{
-  height:320px;
-}
-
-button{
-  padding:12px;
-  margin:5px;
-  border:none;
-  border-radius:10px;
-  font-weight:bold;
-  cursor:pointer;
-}
-
-.analyze{background:#22c55e;}
-.auto{background:#3b82f6;}
-
-select{
+  background:#111827;
   padding:10px;
-  border-radius:10px;
-  margin:10px;
-  background:#111;
-  color:white;
-  border:none;
+  margin:6px 0;
+  border-radius:8px;
+  display:flex;
+  justify-content:space-between;
 }
 </style>
 </head>
@@ -64,88 +60,48 @@ select{
 
 <div class="container">
 
-<h2>🚀 AI Smart Trading Bot</h2>
+<h2>🚀 PRO BOT</h2>
 
-<select id="symbolSelect">
+<div class="top-bar">
+<select id="symbol">
   <option value="R_100">R_100</option>
   <option value="R_50">R_50</option>
-  <option value="R_25">R_25</option>
-  <option value="R_10">R_10</option>
   <option value="BOOM1000">Boom 1000</option>
-  <option value="BOOM500">Boom 500</option>
   <option value="CRASH1000">Crash 1000</option>
-  <option value="CRASH500">Crash 500</option>
 </select>
+
+<button class="buy" onclick="analyze()">تحليل</button>
+<button class="auto" onclick="toggleAuto()" id="autoBtn">AUTO OFF</button>
+</div>
 
 <div id="chart"></div>
 
-<button class="analyze" onclick="analyze()">تحليل</button>
-<button class="auto" onclick="toggleAuto()">AUTO</button>
-
-<div class="card">📡 Radar: <span id="radar">--</span></div>
-<div class="card">📊 Signal: <span id="signal">--</span></div>
-<div class="card">🎯 Entry: <span id="entry">--</span></div>
-<div class="card">💰 TP: <span id="tp">--</span></div>
-<div class="card">🛑 SL: <span id="sl">--</span></div>
+<div class="card">Signal <span id="signal">--</span></div>
+<div class="card">Entry <span id="entry">--</span></div>
+<div class="card">TP <span id="tp">--</span></div>
+<div class="card">SL <span id="sl">--</span></div>
 
 </div>
 
-<audio id="sound" src="https://www.soundjay.com/buttons/sounds/button-10.mp3"></audio>
-
 <script>
 
-let symbol="R_100";
+// ===== VARIABLES =====
 let ws=null;
-let candles=[];
 let prices=[];
-let currentCandle=null;
+let candle=null;
+let symbol="R_100";
 let auto=false;
-let interval=null;
-let lastAlert=0;
 
 // ===== CHART =====
-const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-  layout:{background:{color:"#020617"},textColor:"#aaa"},
+const chart = LightweightCharts.createChart(document.getElementById('chart'),{
+  layout:{background:{color:"#0b0f1a"},textColor:"#aaa"},
   grid:{vertLines:{color:"#111"},horzLines:{color:"#111"}}
 });
 
-const candleSeries = chart.addCandlestickSeries();
+const series = chart.addCandlestickSeries();
 
-// ===== INDICATORS =====
-function EMA(data,p){
-  if(data.length===0) return 0;
-  let k=2/(p+1), ema=data[0];
-  for(let i=1;i<data.length;i++){
-    ema=data[i]*k+ema*(1-k);
-  }
-  return ema;
-}
-
-function RSI(data,p=14){
-  if(data.length<p+1) return 50;
-
-  let g=0,l=0;
-  for(let i=data.length-p;i<data.length;i++){
-    let d=data[i]-data[i-1];
-    if(d>0) g+=d; else l-=d;
-  }
-
-  let rs = l===0 ? 100 : g/l;
-  return 100-(100/(1+rs));
-}
-
-function ATR(data){
-  if(data.length<2) return 0;
-
-  let s=0;
-  for(let i=1;i<data.length;i++){
-    s+=Math.abs(data[i]-data[i-1]);
-  }
-  return s/data.length;
-}
-
-// ===== STREAM =====
-function startStream(){
+// ===== CONNECT =====
+function connect(){
 
   if(ws){
     ws.onclose=null;
@@ -158,122 +114,113 @@ function startStream(){
     ws.send(JSON.stringify({ticks:symbol}));
   };
 
-  ws.onmessage=(msg)=>{
-    let d=JSON.parse(msg.data);
-
+  ws.onmessage=(e)=>{
+    let d=JSON.parse(e.data);
     if(!d.tick) return;
 
     let price=d.tick.quote;
+
     prices.push(price);
 
-    let time=Math.floor(Date.now()/5000);
+    // 🧹 حد البيانات
+    if(prices.length>200) prices.shift();
 
-    if(!currentCandle || currentCandle.time!==time){
-      currentCandle={
-        time:time,
+    let t=Math.floor(Date.now()/5000);
+
+    if(!candle || candle.time!==t){
+      candle={
+        time:t,
         open:price,
         high:price,
         low:price,
         close:price
       };
-      candles.push(currentCandle);
+      series.update(candle);
     }else{
-      currentCandle.high=Math.max(currentCandle.high,price);
-      currentCandle.low=Math.min(currentCandle.low,price);
-      currentCandle.close=price;
+      candle.high=Math.max(candle.high,price);
+      candle.low=Math.min(candle.low,price);
+      candle.close=price;
+      series.update(candle);
     }
 
-    if(candles.length>120){
-      candles.shift();
-      prices.shift();
-    }
-
-    candleSeries.setData(candles);
+    if(auto) analyze();
   };
 
   ws.onclose=()=>{
-    setTimeout(startStream,2000);
+    setTimeout(connect,2000);
   };
 }
 
 // ===== CHANGE SYMBOL =====
-document.getElementById("symbolSelect").addEventListener("change",()=>{
-  symbol = document.getElementById("symbolSelect").value;
+document.getElementById("symbol").onchange=()=>{
+  symbol=document.getElementById("symbol").value;
 
-  candles=[];
   prices=[];
-  currentCandle=null;
+  candle=null;
+  series.setData([]);
 
-  candleSeries.setData([]);
+  connect();
+};
 
-  startStream();
-});
+// ===== EMA =====
+function EMA(period){
+  if(prices.length<period) return null;
+
+  let k=2/(period+1);
+  let ema=prices[0];
+
+  for(let i=1;i<prices.length;i++){
+    ema = prices[i]*k + ema*(1-k);
+  }
+
+  return ema;
+}
 
 // ===== ANALYZE =====
 function analyze(){
 
   if(prices.length<50) return;
 
-  let rsi=RSI(prices);
-  let ema20=EMA(prices,20);
-  let ema50=EMA(prices,50);
-  let atr=ATR(prices);
+  let ema20=EMA(20);
+  let ema50=EMA(50);
 
-  let last=prices.at(-1);
-  let prev=prices.at(-2);
+  if(!ema20 || !ema50) return;
 
-  let momentum=Math.abs(last-prev);
-
-  let radar="NORMAL";
-
-  if(momentum>atr*1.5) radar="⚡ SPIKE";
-  else if(rsi<25 || rsi>75) radar="🔥 REVERSAL";
+  let last=prices[prices.length-1];
+  let prev=prices[prices.length-2];
 
   let signal="WAIT";
 
-  if(rsi<30 && ema20>ema50 && momentum>atr){
-    signal="BUY 🚀";
+  if(ema20>ema50 && last>prev){
+    signal="BUY";
   }
-  else if(rsi>70 && ema20<ema50 && momentum>atr){
-    signal="SELL 💥";
+  else if(ema20<ema50 && last<prev){
+    signal="SELL";
   }
 
-  document.getElementById("radar").innerText=radar;
   document.getElementById("signal").innerText=signal;
 
   if(signal==="WAIT") return;
 
-  let entry = signal.includes("BUY") ? last-atr*0.5 : last+atr*0.5;
-  let sl = signal.includes("BUY") ? entry-atr*2 : entry+atr*2;
-  let tp = signal.includes("BUY") ? entry+atr*4 : entry-atr*4;
+  let entry=last;
+  let sl = signal==="BUY" ? entry-1 : entry+1;
+  let tp = signal==="BUY" ? entry+2 : entry-2;
 
   document.getElementById("entry").innerText=entry.toFixed(2);
   document.getElementById("tp").innerText=tp.toFixed(2);
   document.getElementById("sl").innerText=sl.toFixed(2);
-
-  // 🔔 صوت ذكي (كل 10 ثواني فقط)
-  let now=Date.now();
-  if(auto && now-lastAlert>10000){
-    document.getElementById("sound").play();
-    lastAlert=now;
-  }
 }
 
 // ===== AUTO =====
 function toggleAuto(){
   auto=!auto;
 
-  if(auto){
-    interval=setInterval(analyze,3000);
-    alert("AUTO ON 🔔");
-  }else{
-    clearInterval(interval);
-    alert("AUTO OFF");
-  }
+  document.getElementById("autoBtn").innerText =
+    auto ? "AUTO ON" : "AUTO OFF";
 }
 
 // START
-startStream();
+connect();
 
 </script>
 
