@@ -1,1 +1,174 @@
+1"}
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>Deriv Auto Bot</title>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+  margin:0;
+  background: radial-gradient(circle at top,#020617,#000);
+  color:white;
+  font-family:Arial;
+  text-align:center;
+}
+
+.container{padding:15px;}
+
+h2{
+  color:#22c55e;
+}
+
+canvas{
+  background:#020617;
+  border-radius:15px;
+}
+
+button{
+  padding:12px;
+  margin:5px;
+  border:none;
+  border-radius:10px;
+}
+
+.analyze{background:#22c55e;}
+.auto{background:#3b82f6;}
+
+.card{
+  background:#111827;
+  margin:8px;
+  padding:12px;
+  border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>🚀 Deriv Auto Bot</h2>
+
+<canvas id="chart"></canvas>
+
+<br>
+
+<button class="analyze" onclick="analyzeNow()">تحليل</button>
+<button class="auto" onclick="toggleAuto()">AUTO</button>
+
+<div class="card">Signal: <span id="signal">--</span></div>
+<div class="card">Entry: <span id="entry">--</span></div>
+
+</div>
+
+<audio id="alertSound" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
+
+<script>
+
+let ws;
+let prices=[];
+let auto=false;
+let interval;
+
+const ctx=document.getElementById('chart').getContext('2d');
+
+const chart=new Chart(ctx,{
+  type:'line',
+  data:{labels:[],datasets:[{data:[]}]},
+  options:{animation:false}
+});
+
+function updateChart(p){
+  chart.data.labels.push('');
+  chart.data.datasets[0].data.push(p);
+
+  if(chart.data.labels.length>50){
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update();
+}
+
+function RSI(data){
+  let g=0,l=0;
+  for(let i=1;i<data.length;i++){
+    let d=data[i]-data[i-1];
+    if(d>0) g+=d; else l-=d;
+  }
+  let rs=g/(l||1);
+  return 100-(100/(1+rs));
+}
+
+function EMA(data,p){
+  let k=2/(p+1), ema=data[0];
+  for(let i=1;i<data.length;i++){
+    ema = data[i]k + ema(1-k);
+  }
+  return ema;
+}
+
+function analyzeNow(){
+
+  prices=[];
+
+  ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({ticks:"R_100"}));
+  };
+
+  ws.onmessage=(msg)=>{
+    let d=JSON.parse(msg.data);
+
+    if(d.tick){
+      let price=d.tick.quote;
+
+      prices.push(price);
+      updateChart(price);
+
+      if(prices.length<50) return;
+
+      ws.close();
+
+      let rsi=RSI(prices);
+      let ema20=EMA(prices,20);
+      let ema50=EMA(prices,50);
+
+      let signal="WAIT";
+
+      if(rsi<30 && ema20>ema50){
+        signal="BUY 🔥";
+      }
+      else if(rsi>70 && ema20<ema50){
+        signal="SELL 🔥";
+      }
+
+      document.getElementById("signal").innerText=signal;
+      document.getElementById("entry").innerText=price.toFixed(2);
+
+      if(auto && signal!=="WAIT"){
+        document.getElementById("alertSound").play();
+      }
+    }
+  };
+}
+
+function toggleAuto(){
+  auto=!auto;
+
+  if(auto){
+    interval=setInterval(analyzeNow,5000);
+    alert("AUTO ON");
+  }else{
+    clearInterval(interval);
+    alert("AUTO OFF");
+  }
+}
+
+</script>
+
+</body>
+</ht
