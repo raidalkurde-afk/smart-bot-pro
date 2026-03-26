@@ -21,7 +21,6 @@ h2{
   color:#00ff9d;
 }
 
-/* 🔥 TOP BAR */
 .top-bar{
   display:flex;
   gap:5px;
@@ -44,7 +43,6 @@ button{cursor:pointer;}
   height:350px;
 }
 
-/* 🔥 CARDS */
 .card{
   background:#111827;
   padding:10px;
@@ -60,7 +58,7 @@ button{cursor:pointer;}
 
 <div class="container">
 
-<h2>🚀 PRO BOT</h2>
+<h2>🚀 PRO BOT AI</h2>
 
 <div class="top-bar">
 <select id="symbol">
@@ -103,7 +101,6 @@ let auto=false;
 const chart = LightweightCharts.createChart(document.getElementById('chart'),{
   layout:{background:{color:"#0a0f1c"},textColor:"#aaa"},
   grid:{vertLines:{color:"#1f2937"},horzLines:{color:"#1f2937"}},
-  crosshair:{mode:1}
 });
 
 const series = chart.addCandlestickSeries({
@@ -114,6 +111,18 @@ const series = chart.addCandlestickSeries({
   wickUpColor:"#00e676",
   wickDownColor:"#ff5252"
 });
+
+// ===== AI API =====
+async function predict(price){
+  let res = await fetch("https://smart-bot-pro.vercel.app/api/predict", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({price})
+  });
+
+  let data = await res.json();
+  return data.prediction;
+}
 
 // ===== CONNECT =====
 function connect(){
@@ -129,7 +138,7 @@ function connect(){
     ws.send(JSON.stringify({ticks:symbol}));
   };
 
-  ws.onmessage=(e)=>{
+  ws.onmessage=async (e)=>{
     let d=JSON.parse(e.data);
     if(!d.tick) return;
 
@@ -138,17 +147,10 @@ function connect(){
 
     if(prices.length>500) prices.shift();
 
-    // 🔥 شموع دقيقة (احترافي)
     let t=Math.floor(Date.now()/60000);
 
     if(!currentCandle || currentCandle.time!==t){
-      currentCandle={
-        time:t,
-        open:price,
-        high:price,
-        low:price,
-        close:price
-      };
+      currentCandle={time:t,open:price,high:price,low:price,close:price};
       candles.push(currentCandle);
     }else{
       currentCandle.high=Math.max(currentCandle.high,price);
@@ -184,13 +186,13 @@ function EMA(p){
   let ema=prices[prices.length-p];
 
   for(let i=prices.length-p+1;i<prices.length;i++){
-    ema=prices[i]*k+ema*(1-k);
+    ema=prices[i]k+ema(1-k);
   }
   return ema;
 }
 
-// ===== ANALYZE =====
-function analyze(){
+// ===== ANALYZE WITH AI =====
+async function analyze(){
 
   if(prices.length<60) return;
 
@@ -200,13 +202,15 @@ function analyze(){
   let last=prices.at(-1);
   let prev=prices.at(-3);
 
+  let prediction = await predict(last);
+
   let signal="WAIT";
 
-  if(ema20>ema50 && last>prev){
-    signal="BUY";
+  if(ema20>ema50 && last>prev && prediction===1){
+    signal="BUY 🚀";
   }
-  else if(ema20<ema50 && last<prev){
-    signal="SELL";
+  else if(ema20<ema50 && last<prev && prediction===1){
+    signal="SELL 🔻";
   }
 
   document.getElementById("signal").innerText=signal;
@@ -214,8 +218,8 @@ function analyze(){
   if(signal==="WAIT") return;
 
   let entry=last;
-  let sl = signal==="BUY" ? entry-2 : entry+2;
-  let tp = signal==="BUY" ? entry+4 : entry-4;
+  let sl = signal.includes("BUY") ? entry-2 : entry+2;
+  let tp = signal.includes("BUY") ? entry+4 : entry-4;
 
   document.getElementById("entry").innerText=entry.toFixed(2);
   document.getElementById("tp").innerText=tp.toFixed(2);
