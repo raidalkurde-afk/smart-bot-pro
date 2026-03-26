@@ -1,98 +1,104 @@
-231"}
-<!DOCTYPE html>
-<html lang="ar">
-<head>
-<meta charset="UTF-8">
-<title>Smart Bot</title>
+}
+// 🔁 تشغيل تلقائي
+let interval;
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+function toggleAuto(){
+  auto = !auto;
 
-<style>
-body{
-  background:#020617;
-  color:white;
-  font-family:Arial;
-  text-align:center;
+  if(auto){
+    alert("AUTO ON 🔔");
+
+    interval = setInterval(()=>{
+      analyzeNow();
+    }, 5000); // كل 5 ثواني
+  }else{
+    clearInterval(interval);
+    alert("AUTO OFF");
+  }
 }
 
-canvas{
-  background:#0f172a;
-  border-radius:10px;
-  margin:10px;
-}
+// ===== تحليل قوي =====
+function analyzeNow(){
 
-button{
-  padding:10px;
-  margin:5px;
-  border:none;
-  border-radius:8px;
-}
+  prices=[];
 
-.start{background:green;color:white;}
-.auto{background:blue;color:white;}
-</style>
-</head>
-
-<body>
-
-<h2>🚀 Smart Bot</h2>
-
-<canvas id="chart" height="200"></canvas>
-
-<br>
-
-<button class="start" onclick="start()">تشغيل</button>
-<button class="auto" onclick="toggleAuto()">AUTO</button>
-
-<h3 id="price">Price: --</h3>
-
-<script>
-let ws;
-let prices=[];
-let chart;
-
-const ctx=document.getElementById("chart").getContext("2d");
-chart=new Chart(ctx,{
-  type:'line',
-  data:{
-    labels:[],
-    datasets:[{data:[]}]
-  },
-  options:{animation:false}
-});
-
-function start(){
   ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
 
   ws.onopen=()=>{
-    ws.send(JSON.stringify({ticks:"R_100"}));
+    let s=document.getElementById("symbol").value;
+    ws.send(JSON.stringify({ticks:s}));
   };
 
   ws.onmessage=(msg)=>{
-    let data=JSON.parse(msg.data);
+    let d=JSON.parse(msg.data);
 
-    if(data.tick){
-      let price=data.tick.quote;
+    if(d.tick){
+      let price=d.tick.quote;
 
-      document.getElementById("price").innerText="Price: "+price;
+      prices.push(price);
+      updateChart(price);
 
-      chart.data.labels.push('');
-      chart.data.datasets[0].data.push(price);
+      if(prices.length<50) return;
 
-      if(chart.data.labels.length>30){
-        chart.data.labels.shift();
-        chart.data.datasets[0].data.shift();
+      ws.close();
+
+      let rsi=RSI(prices);
+      let ema20=EMA(prices,20);
+      let ema50=EMA(prices,50);
+      let atr=ATR(prices);
+
+      document.getElementById("rsi").innerText=rsi.toFixed(0);
+
+      let signal="WAIT";
+      let strength=0;
+
+      let last = prices[prices.length-2];
+      let momentum = Math.abs(price-last);
+
+      // 💥 فلترة قوية
+      let trendUp = ema20 > ema50;
+      let trendDown = ema20 < ema50;
+
+      // ===== BUY قوي =====
+      if(rsi < 30 && trendUp && momentum > atr0.5){
+        signal="BUY 🔥";
+        strength=90;
       }
 
-      chart.update();
+      // ===== SELL قوي =====
+      else if(rsi > 70 && trendDown && momentum > atr0.5){
+        signal="SELL 🔥";
+        strength=90;
+      }
+
+      // ===== سبايك =====
+      if(momentum > atr2){
+        signal="SPIKE ⚡";
+        strength=95;
+      }
+
+      // عرض
+      document.getElementById("signal").innerText=signal;
+      document.getElementById("strengthBar").style.width=strength+"%";
+
+      let entry=price;
+
+      let sl = signal.includes("BUY")
+        ? price - atr2
+        : price + atr2;
+
+      let tp = signal.includes("BUY")
+        ? price + atr4
+        : price - atr*4;
+
+      document.getElementById("entry").innerText=entry.toFixed(2);
+      document.getElementById("tp").innerText=tp.toFixed(2);
+      document.getElementById("sl").innerText=sl.toFixed(2);
+
+      // 🔔 تنبيه فقط إذا قوي
+      if(auto && strength >= 90){
+        document.getElementById("alertSound").play();
+      }
+
     }
   };
-}
-
-function toggleAuto(){
-  alert("AUTO ON");
-}
-</script>
-
-</body>
-</
