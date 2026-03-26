@@ -1,1 +1,208 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>Smart Bot PRO</title>
 
+<script src="https://s3.tradingview.com/tv.js"></script>
+
+<style>
+body {
+  margin:0;
+  background:linear-gradient(135deg,#020617,#0f172a);
+  color:white;
+  font-family:Arial;
+  text-align:center;
+}
+
+.container {
+  padding:20px;
+}
+
+h2 {
+  color:#22c55e;
+}
+
+#chart {
+  height:300px;
+  margin-bottom:10px;
+}
+
+select, button {
+  padding:12px;
+  margin:5px;
+  border:none;
+  border-radius:12px;
+  font-size:15px;
+}
+
+button {
+  cursor:pointer;
+}
+
+.start { background:#22c55e; }
+.auto { background:#3b82f6; }
+
+.card {
+  background:#111827;
+  padding:10px;
+  margin:8px;
+  border-radius:12px;
+}
+
+.buy { color:#22c55e; }
+.sell { color:#ef4444; }
+.wait { color:gray; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>🚀 Smart Bot PRO</h2>
+
+<div id="chart"></div>
+
+<select id="symbol">
+<option value="R_100">R_100</option>
+<option value="BOOM1000">Boom 1000</option>
+<option value="CRASH1000">Crash 1000</option>
+</select>
+
+<br>
+
+<button class="start" onclick="start()">تشغيل</button>
+<button class="auto" onclick="toggleAuto()">AUTO</button>
+
+<div class="card">Price: <span id="price">--</span></div>
+<div class="card">Signal: <span id="signal">--</span></div>
+<div class="card">Strength: <span id="strength">--</span></div>
+<div class="card">Entry: <span id="entry">--</span></div>
+<div class="card">TP: <span id="tp">--</span></div>
+<div class="card">SL: <span id="sl">--</span></div>
+
+</div>
+
+<script>
+new TradingView.widget({
+  container_id:"chart",
+  width:"100%",
+  height:300,
+  symbol:"R_100",
+  interval:"1",
+  theme:"dark"
+});
+
+let ws;
+let prices=[];
+let auto=false;
+
+function EMA(data, period){
+  let k=2/(period+1);
+  let ema=data[0];
+  for(let i=1;i<data.length;i++){
+    ema=data[i]*k+ema*(1-k);
+  }
+  return ema;
+}
+
+function RSI(data, period=14){
+  let gain=0, loss=0;
+  for(let i=1;i<data.length;i++){
+    let d=data[i]-data[i-1];
+    if(d>0) gain+=d;
+    else loss-=d;
+  }
+  let rs=gain/(loss||1);
+  return 100-(100/(1+rs));
+}
+
+function start(){
+  ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+
+  ws.onopen=()=>{
+    let s=document.getElementById("symbol").value;
+    ws.send(JSON.stringify({ticks:s}));
+  };
+
+  ws.onmessage=(msg)=>{
+    let d=JSON.parse(msg.data);
+    if(d.tick){
+      let price=d.tick.quote;
+
+      document.getElementById("price").innerText=price;
+
+      prices.push(price);
+      if(prices.length>60) prices.shift();
+
+      analyze(price);
+    }
+  };
+}
+
+function analyze(price){
+  if(prices.length<30) return;
+
+  let rsi=RSI(prices);
+  let ema20=EMA(prices,20);
+  let ema50=EMA(prices,50);
+
+  let support=Math.min(...prices);
+  let resistance=Math.max(...prices);
+
+  let signal="WAIT";
+  let strength=0;
+
+  if(rsi<30 && price>ema20 && ema20>ema50){
+    signal="BUY";
+    strength+=2;
+  }
+
+  if(rsi>70 && price<ema20 && ema20<ema50){
+    signal="SELL";
+    strength+=2;
+  }
+
+  if(price<support+0.5) strength+=1;
+  if(price>resistance-0.5) strength+=1;
+
+  let last=prices[prices.length-2];
+  if(Math.abs(price-last)>1.2){
+    signal="SPIKE ⚡";
+    strength=3;
+  }
+
+  let color="wait";
+  if(signal==="BUY") color="buy";
+  if(signal==="SELL") color="sell";
+
+  document.getElementById("signal").innerHTML=
+    `<span class="${color}">${signal}</span>`;
+
+  document.getElementById("strength").innerText=
+    strength + " / 5";
+
+  if(signal==="BUY"||signal==="SELL"){
+    let entry=price;
+    let tp=signal==="BUY"?price+2:price-2;
+    let sl=signal==="BUY"?price-1:price+1;
+
+    document.getElementById("entry").innerText=entry;
+    document.getElementById("tp").innerText=tp;
+    document.getElementById("sl").innerText=sl;
+
+    if(auto && strength>=3){
+      console.log("AUTO TRADE:",signal);
+    }
+  }
+}
+
+function toggleAuto(){
+  auto=!auto;
+  alert("AUTO: "+(auto?"ON":"OFF"));
+}
+</script>
+
+</body>
+</html>
