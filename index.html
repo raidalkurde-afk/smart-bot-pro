@@ -25,9 +25,7 @@ body{
   height:300px;
 }
 
-.panel{
-  padding:10px;
-}
+.panel{padding:10px;}
 
 .card{
   background:#0f172a;
@@ -75,34 +73,17 @@ select,button{
 <div class="card">SL <span id="sl">--</span></div>
 </div>
 
-<!-- 🔥 كل الأزواج -->
 <div class="bottom-bar">
 <select id="symbol">
-
-<!-- 🔥 Random Index -->
 <option value="R_10">R_10</option>
 <option value="R_25">R_25</option>
 <option value="R_50">R_50</option>
 <option value="R_75">R_75</option>
 <option value="R_100">R_100</option>
-
-<!-- 🔥 Volatility -->
-<option value="R_10_1S">Volatility 10 (1s)</option>
-<option value="R_25_1S">Volatility 25 (1s)</option>
-<option value="R_50_1S">Volatility 50 (1s)</option>
-<option value="R_75_1S">Volatility 75 (1s)</option>
-<option value="R_100_1S">Volatility 100 (1s)</option>
-
-<!-- 🔥 Boom -->
-<option value="BOOM300">Boom 300</option>
 <option value="BOOM500">Boom 500</option>
 <option value="BOOM1000">Boom 1000</option>
-
-<!-- 🔥 Crash -->
-<option value="CRASH300">Crash 300</option>
 <option value="CRASH500">Crash 500</option>
 <option value="CRASH1000">Crash 1000</option>
-
 </select>
 
 <button class="analyze" onclick="analyze()">تحليل</button>
@@ -111,13 +92,14 @@ select,button{
 
 <script>
 
-// ===== SETTINGS =====
+// ===== STATE =====
 let symbol="R_100";
 let ws;
 let prices=[];
 let candles=[];
 let currentCandle=null;
 let auto=true;
+let lastAnalysis=0;
 
 // ===== CHART =====
 const chart = LightweightCharts.createChart(document.getElementById('chart'),{
@@ -130,117 +112,138 @@ function connect(){
 
   if(ws) ws.close();
 
-  ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+  ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
 
-  ws.onopen=()=>{
+  ws.onopen = () => {
     ws.send(JSON.stringify({ticks:symbol}));
   };
 
-  ws.onmessage=(e)=>{
-    let d=JSON.parse(e.data);
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
     if(!d.tick) return;
 
-    let price=d.tick.quote;
+    const price = d.tick.quote;
     prices.push(price);
 
-    if(prices.length>200) prices.shift();
+    if(prices.length > 300) prices.shift();
 
-    let t=Math.floor(Date.now()/60000);
-
-    if(!currentCandle || currentCandle.time!==t){
-      currentCandle={time:t,open:price,high:price,low:price,close:price};
-      candles.push(currentCandle);
-    }else{
-      currentCandle.high=Math.max(currentCandle.high,price);
-      currentCandle.low=Math.min(currentCandle.low,price);
-      currentCandle.close=price;
-    }
-
-    if(candles.length>100) candles.shift();
+    updateCandles(price);
 
     series.setData(candles);
 
-    if(auto) analyze();
+    // 🔥 تقليل التحليل (كل 1 ثانية)
+    if(auto && Date.now() - lastAnalysis > 1000){
+      analyze();
+      lastAnalysis = Date.now();
+    }
   };
 
-  ws.onclose=()=>setTimeout(connect,2000);
+  ws.onclose = () => setTimeout(connect,2000);
 }
 
-// ===== RSI =====
-function RSI(){
-  if(prices.length<20) return null;
+// ===== CANDLES =====
+function updateCandles(price){
 
-  let gains=0,losses=0;
+  const t = Math.floor(Date.now()/60000);
 
-  for(let i=1;i<15;i++){
-    let diff=prices.at(-i)-prices.at(-i-1);
-    if(diff>0) gains+=diff;
-    else losses-=diff;
+  if(!currentCandle || currentCandle.time !== t){
+    currentCandle = {time:t,open:price,high:price,low:price,close:price};
+    candles.push(currentCandle);
+  }else{
+    currentCandle.high = Math.max(currentCandle.high,price);
+    currentCandle.low  = Math.min(currentCandle.low,price);
+    currentCandle.close = price;
   }
 
-  let rs=gains/(losses||1);
-  return 100-(100/(1+rs));
+  if(candles.length > 150) candles.shift();
 }
 
-// ===== SPIKE =====
-function spike(){
-  let last=prices.at(-1);
-  let avg=prices.slice(-10).reduce((a,b)=>a+b,0)/10;
-  return Math.abs(last-avg)>2;
+// ===== RSI (محترف) =====
+function RSI(period=14){
+  if(prices.length < period+1) return null;
+
+  let gains = 0, losses = 0;
+
+  for(let i = prices.length-period; i < prices.length; i++){
+    const diff = prices[i] - prices[i-1];
+    if(diff > 0) gains += diff;
+    else losses -= diff;
+  }
+
+  const rs = gains / (losses || 1);
+  return 100 - (100 / (1 + rs));
+}
+
+// ===== SPIKE SMART =====
+function detectSpike(){
+
+  if(prices.length < 20) return false;
+
+  const last = prices.at(-1);
+  const avg  = prices.slice(-20).reduce((a,b)=>a+b,0)/20;
+
+  return Math.abs(last - avg) > (avg * 0.003); // ذكي %
 }
 
 // ===== ANALYZE =====
 function analyze(){
 
-  if(prices.length<30) return;
+  if(prices.length < 50) return;
 
-  let r=RSI();
-  document.getElementById("rsi").innerText = r ? r.toFixed(1) : "--";
+  const rsi = RSI();
+  const last = prices.at(-1);
 
-  let last=prices.at(-1);
-  let signal="WAIT";
+  document.getElementById("rsi").innerText =
+    rsi ? rsi.toFixed(1) : "--";
 
-  if(spike()){
-    signal="⚡ SPIKE قريب";
+  let signal = "WAIT";
+
+  if(detectSpike()){
+    signal = "⚡ SPIKE قريب";
   }
-  else if(r<30){
-    signal="BUY 🚀";
+  else if(rsi < 35){
+    signal = "BUY 🚀";
   }
-  else if(r>70){
-    signal="SELL 🔻";
+  else if(rsi > 65){
+    signal = "SELL 🔻";
   }
 
-  document.getElementById("signal").innerText=signal;
+  document.getElementById("signal").innerText = signal;
 
-  if(signal==="WAIT") return;
+  if(signal === "WAIT") return;
 
-  let entry=last;
-  let tp=entry+3;
-  let sl=entry-2;
+  let entry = last;
+  let tp = entry + 3;
+  let sl = entry - 2;
 
   if(signal.includes("SELL")){
-    tp=entry-3;
-    sl=entry+2;
+    tp = entry - 3;
+    sl = entry + 2;
   }
 
-  document.getElementById("entry").innerText=entry.toFixed(2);
-  document.getElementById("tp").innerText=tp.toFixed(2);
-  document.getElementById("sl").innerText=sl.toFixed(2);
+  updateUI(entry,tp,sl);
+}
+
+// ===== UI =====
+function updateUI(entry,tp,sl){
+  document.getElementById("entry").innerText = entry.toFixed(2);
+  document.getElementById("tp").innerText = tp.toFixed(2);
+  document.getElementById("sl").innerText = sl.toFixed(2);
 }
 
 // ===== AUTO =====
 function toggleAuto(){
-  auto=!auto;
+  auto = !auto;
   document.getElementById("autoBtn").innerText =
     auto ? "AUTO ON" : "AUTO OFF";
 }
 
-// ===== CHANGE =====
-document.getElementById("symbol").onchange=()=>{
-  symbol=document.getElementById("symbol").value;
-  prices=[];
-  candles=[];
-  currentCandle=null;
+// ===== CHANGE SYMBOL =====
+document.getElementById("symbol").onchange = (e)=>{
+  symbol = e.target.value;
+  prices = [];
+  candles = [];
+  currentCandle = null;
   series.setData([]);
   connect();
 };
