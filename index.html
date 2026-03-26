@@ -17,7 +17,6 @@ body {
   text-align:center;
 }
 
-/* --- رأس التطبيق مع روبوت --- */
 .header{
   padding:15px;
   font-size:22px;
@@ -38,7 +37,6 @@ body {
   100% { transform: translateY(-10px); }
 }
 
-/* --- الشارت --- */
 #chart {
   height:360px;
   margin:10px 15px;
@@ -46,7 +44,6 @@ body {
   box-shadow:0 4px 12px rgba(0,0,0,0.5);
 }
 
-/* --- بطاقات الإشارات --- */
 .panel {
   display:grid;
   grid-template-columns: repeat(3,1fr);
@@ -72,7 +69,6 @@ body {
   50%{background: rgba(255,50,50,0.8);}
 }
 
-/* --- البار السفلي والأزرار --- */
 .bottom-bar {
   position:fixed;
   bottom:0;
@@ -169,9 +165,10 @@ const series = chart.addCandlestickSeries({
 // ===== WEBSOCKET =====
 function connect(){
   if(ws) ws.close();
-  ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+  ws = new WebSocket("wss://ws.binaryws.com/websockets/v3?app_id=1089");
 
   ws.onopen = ()=>{
+    // طلب بيانات OHLC مباشرة
     ws.send(JSON.stringify({
       "ticks_history": symbol,
       "end":"latest",
@@ -179,10 +176,9 @@ function connect(){
       "granularity":60,
       "style":"candles"
     }));
+
     ws.send(JSON.stringify({
-      "ohlc": symbol,
-      "granularity": 60,
-      "subscribe":1
+      "proposal_open_contract":1
     }));
   };
 
@@ -200,41 +196,18 @@ function connect(){
       prices = candles.map(c=>c.close);
       series.setData(candles);
     }
-
-    if(data.ohlc){
-      const c = data.ohlc;
-      const candle = {
-        time: Math.floor(c.epoch),
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close
-      };
-      const last = candles.at(-1);
-      if(last && last.time===candle.time) candles[candles.length-1]=candle;
-      else candles.push(candle);
-      series.update(candle);
-      prices.push(candle.close);
-      if(prices.length>200) prices.shift();
-    }
   };
-
-  ws.onclose = ()=>setTimeout(connect,2000);
 }
 
 // ===== INDICATORS =====
 function getRSI(){
   if(prices.length<14) return null;
-  const rsiValues = technicalindicators.RSI.calculate({values:prices, period:14});
-  return rsiValues.at(-1);
+  return technicalindicators.RSI.calculate({values:prices, period:14}).at(-1);
 }
-
 function getEMA(period){
   if(prices.length<period) return null;
-  const emaValues = technicalindicators.EMA.calculate({values:prices, period});
-  return emaValues.at(-1);
+  return technicalindicators.EMA.calculate({values:prices, period}).at(-1);
 }
-
 function isSpike(){
   if(prices.length<10) return false;
   let lastMove = Math.abs(prices.at(-1)-prices.at(-2));
@@ -244,9 +217,8 @@ function isSpike(){
   },0)/9;
   return lastMove>avgMove*1.8;
 }
-
 function getSignal(rsi, ema20, ema50){
-  let trend = "SIDE";
+  let trend="SIDE";
   if(ema20>ema50) trend="UP";
   else if(ema20<ema50) trend="DOWN";
 
@@ -266,16 +238,13 @@ function analyze(){
 
   const signalData = getSignal(rsi, ema20, ema50);
 
-  const signalCard = document.getElementById("signal");
-  signalCard.innerText = signalData.signal;
+  document.getElementById("signal").innerText = signalData.signal;
   document.getElementById("rsi").innerText = rsi?rsi.toFixed(1):"--";
   document.getElementById("trend").innerText = signalData.trend;
 
-  if(signalData.signal==="⚡ SPIKE قريب"){
-    signalCard.parentElement.classList.add("spike");
-  } else {
-    signalCard.parentElement.classList.remove("spike");
-  }
+  const signalCard = document.getElementById("signal").parentElement;
+  if(signalData.signal==="⚡ SPIKE قريب") signalCard.classList.add("spike");
+  else signalCard.classList.remove("spike");
 
   if(signalData.signal!=="WAIT"){
     document.getElementById("entry").innerText = lastPrice.toFixed(2);
@@ -284,21 +253,18 @@ function analyze(){
   }
 }
 
-// ===== AUTO ANALYSIS =====
+// ===== AUTO =====
 setInterval(()=>{ if(auto) analyze(); },1000);
-function toggleAuto(){
-  auto=!auto;
-  document.getElementById("autoBtn").innerText = auto?"AUTO ON":"AUTO OFF";
-}
+function toggleAuto(){ auto=!auto; document.getElementById("autoBtn").innerText = auto?"AUTO ON":"AUTO OFF"; }
 
 // ===== CHANGE SYMBOL =====
-document.getElementById("symbol").onchange=(e)=>{
-  symbol=e.target.value;
-  candles=[];
-  prices=[];
+document.getElementById("symbol").onchange = (e)=>{
+  symbol = e.target.value;
+  candles = [];
+  prices = [];
   series.setData([]);
   connect();
-};
+}
 
 // START
 connect();
